@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Balloon Archer">
+    <meta name="theme-color" content="#4A90C8">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
     <title>Balloon Archer</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -43,6 +47,33 @@
             letter-spacing: 0.3px;
         }
         .pill em { color: #e74c3c; font-style: normal; }
+
+        /* ── REFRESH BUTTON ── */
+        #update-btn {
+            position: fixed;
+            bottom: clamp(12px, 3vw, 20px);
+            right:  clamp(12px, 3vw, 20px);
+            width:  clamp(36px, 6vw, 46px);
+            height: clamp(36px, 6vw, 46px);
+            border-radius: 50%;
+            background: rgba(255,255,255,0.18);
+            border: 2px solid rgba(255,255,255,0.30);
+            color: rgba(255,255,255,0.55);
+            font-size: clamp(17px, 3.5vw, 23px);
+            line-height: 1;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 300;
+            touch-action: manipulation;
+            transition: background .15s, color .15s, transform .25s;
+        }
+        #update-btn:active {
+            background: rgba(255,255,255,0.32);
+            color: #fff;
+            transform: rotate(180deg);
+        }
     </style>
 </head>
 <body>
@@ -51,6 +82,7 @@
     <div class="pill">Score&nbsp;<em id="score">0</em></div>
     <div class="pill">Best&nbsp;<em id="best">0</em></div>
 </div>
+<button id="update-btn" onclick="hardRefresh()" title="Refresh app (clear cache)">⟳</button>
 <script>
 'use strict';
 
@@ -732,11 +764,28 @@ function loop() {
     requestAnimationFrame(loop);
 }
 
+// ─── HARD REFRESH ────────────────────────────────────────────
+async function hardRefresh() {
+    if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+    }
+    if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+    }
+    location.reload(true);
+}
+
 // ─── BOOT ────────────────────────────────────────────────────
 resize();
 initClouds();
 spawnBalloon();
 loop();
+
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
 </script>
 </body>
 </html>

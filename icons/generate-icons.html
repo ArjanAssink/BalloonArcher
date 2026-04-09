@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Generate PWA Icons — Balloon Archer</title>
+<style>
+  body { font-family: Arial, sans-serif; background: #e8f4f8; display: flex; flex-direction: column; align-items: center; padding: 40px; gap: 24px; }
+  h2 { color: #1a1a2e; }
+  .previews { display: flex; gap: 32px; align-items: flex-end; flex-wrap: wrap; justify-content: center; }
+  .preview-box { text-align: center; }
+  canvas { border-radius: 22%; box-shadow: 0 4px 20px #0003; display: block; margin: 0 auto 8px; }
+  button { padding: 12px 28px; font-size: 16px; background: #3A8FCC; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+  button:hover { background: #2A7AB8; }
+  .note { background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px 24px; max-width: 560px; color: #555; font-size: 14px; line-height: 1.6; }
+  code { background: #eee; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
+</style>
+</head>
+<body>
+<h2>🎈 PWA Icon Generator — Balloon Archer</h2>
+
+<div class="note">
+  <strong>Instructions:</strong><br>
+  1. Click each download button below.<br>
+  2. Save <code>icon-192.png</code> and <code>icon-512.png</code> into this <code>icons/</code> folder.<br>
+  3. Commit and push — you can delete this file afterwards.
+</div>
+
+<div class="previews">
+  <div class="preview-box">
+    <canvas id="c192" width="192" height="192"></canvas>
+    <p>192 × 192 px</p>
+    <button onclick="download('c192','icon-192.png')">⬇ Download icon-192.png</button>
+  </div>
+  <div class="preview-box">
+    <canvas id="c512" width="512" height="512"></canvas>
+    <p>512 × 512 px</p>
+    <button onclick="download('c512','icon-512.png')">⬇ Download icon-512.png</button>
+  </div>
+</div>
+
+<script>
+const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#3A8FCC"/>
+      <stop offset="72%"  stop-color="#78C8E8"/>
+      <stop offset="100%" stop-color="#5DBB63"/>
+    </linearGradient>
+    <radialGradient id="bal" cx="35%" cy="30%" r="68%">
+      <stop offset="0%"   stop-color="#FFAAAA"/>
+      <stop offset="50%"  stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#CC2222"/>
+    </radialGradient>
+    <filter id="sh">
+      <feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#00000044"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" fill="url(#sky)" rx="90"/>
+
+  <!-- Ground -->
+  <rect x="0" y="448" width="512" height="64" fill="#3A7D44"/>
+  <rect x="0" y="448" width="512" height="20" fill="#4CAF50"/>
+
+  <!-- Balloon string -->
+  <path d="M256,265 Q267,304 261,345" stroke="rgba(50,50,50,0.6)" stroke-width="4" fill="none" stroke-linecap="round"/>
+
+  <!-- Balloon body -->
+  <ellipse cx="256" cy="162" rx="88" ry="104" fill="url(#bal)" filter="url(#sh)"/>
+
+  <!-- Balloon highlight -->
+  <ellipse cx="222" cy="120" rx="26" ry="40" fill="rgba(255,255,255,0.38)"/>
+
+  <!-- Knot -->
+  <circle cx="256" cy="265" r="11" fill="#AA1111"/>
+
+  <!-- Bow left limb -->
+  <path d="M256,454 Q176,388 196,314" stroke="#8B4513" stroke-width="18" fill="none" stroke-linecap="round"/>
+  <!-- Bow right limb -->
+  <path d="M256,454 Q336,388 316,314" stroke="#8B4513" stroke-width="18" fill="none" stroke-linecap="round"/>
+  <!-- Grip -->
+  <line x1="256" y1="440" x2="256" y2="468" stroke="#C8A46A" stroke-width="26" stroke-linecap="round"/>
+  <!-- String (V pulled back) -->
+  <polyline points="196,314 256,392 316,314" stroke="rgba(238,238,238,0.92)" stroke-width="5" fill="none" stroke-linejoin="round"/>
+
+  <!-- Arrow shaft -->
+  <line x1="256" y1="392" x2="256" y2="268" stroke="#D4A96A" stroke-width="9" stroke-linecap="round"/>
+  <!-- Arrowhead -->
+  <polygon points="256,232 241,270 256,262 271,270" fill="#B0B0BA"/>
+  <!-- Fletch left -->
+  <polygon points="256,392 234,418 247,392" fill="#DD2222"/>
+  <!-- Fletch right -->
+  <polygon points="256,392 278,418 265,392" fill="#DD2222"/>
+</svg>`;
+
+function renderToCanvas(id) {
+  return new Promise(resolve => {
+    const canvas = document.getElementById(id);
+    const ctx    = canvas.getContext('2d');
+    const size   = canvas.width;
+    const blob   = new Blob([SVG], { type: 'image/svg+xml' });
+    const url    = URL.createObjectURL(blob);
+    const img    = new Image();
+    img.onload = () => {
+      ctx.clearRect(0, 0, size, size);
+      ctx.drawImage(img, 0, 0, size, size);
+      URL.revokeObjectURL(url);
+      resolve();
+    };
+    img.src = url;
+  });
+}
+
+function download(canvasId, filename) {
+  const canvas = document.getElementById(canvasId);
+  const a = document.createElement('a');
+  a.download = filename;
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+}
+
+Promise.all([renderToCanvas('c192'), renderToCanvas('c512')]);
+</script>
+</body>
+</html>

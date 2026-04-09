@@ -226,6 +226,16 @@ let score = 0;
 let best  = +localStorage.getItem('ba_best') || 0;
 bestEl.textContent = best;
 
+// ─── BIRD ─────────────────────────────────────────────────────
+let bird = {
+    active: false,
+    x: 0, y: 0,
+    vx: 0,
+    hitT: -1   // -1 = flying; 1→0 = hit shrink animation
+};
+let balloonsSinceLastBird = 0;
+let nextBirdAt = 3 + Math.floor(Math.random() * 3);
+
 // ─── HARD MODE ───────────────────────────────────────────────
 let hardMode = false;
 const hardModeBtn = document.getElementById('hard-mode-btn');
@@ -260,6 +270,50 @@ function spawnBalloon() {
     balloon.r        = Math.max(hardMode ? 9 : 36, baseR - score * 0.6);
     balloon.active   = true;
     balloon.popT     = -1;
+
+    balloonsSinceLastBird++;
+    if (!bird.active && balloonsSinceLastBird >= nextBirdAt) {
+        balloonsSinceLastBird = 0;
+        nextBirdAt = 3 + Math.floor(Math.random() * 3);
+        setTimeout(() => { if (!gameOver) spawnBird(); }, 600);
+    }
+}
+
+function spawnBird() {
+    const goRight = Math.random() < 0.5;
+    bird.x    = goRight ? -60 : W + 60;
+    bird.y    = H * 0.12 + Math.random() * H * 0.32;
+    bird.vx   = (goRight ? 1 : -1) * (3.5 + Math.random() * 1.5);
+    bird.hitT = -1;
+    bird.active = true;
+}
+
+function updateBird() {
+    if (!bird.active) return;
+    if (bird.hitT >= 0) {
+        bird.hitT -= 0.05;
+        if (bird.hitT <= 0) bird.active = false;
+        return;
+    }
+    bird.x += bird.vx;
+    if (bird.x < -120 || bird.x > W + 120) bird.active = false;
+}
+
+function hitBird() {
+    playBirdHit();
+    burst(bird.x, bird.y, '#C8945A');
+    bird.hitT    = 1;
+    arrow.flying = false;
+    arrow.x = BOW_X; arrow.y = BOW_Y; arrow.angle = -Math.PI / 2;
+
+    arrowsLeft += 5;
+    floatTexts.push({
+        x: bird.x, y: bird.y - 34,
+        life: 1,
+        text: '+5 arrows',
+        color: '#90EE90',
+        strokeColor: '#1A5C1A'
+    });
 }
 
 // ─── ARROW ───────────────────────────────────────────────────
@@ -520,9 +574,29 @@ function playDogLaugh() {
     } catch (_) {}
 }
 
+function playBirdHit() {
+    try {
+        const ac = getAC(), t = ac.currentTime;
+        // Two ascending chirps — reward sound
+        for (let i = 0; i < 2; i++) {
+            const t0 = t + i * 0.15;
+            const osc = ac.createOscillator();
+            const g   = ac.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(550 + i * 250, t0);
+            osc.frequency.exponentialRampToValueAtTime(950 + i * 200, t0 + 0.13);
+            g.gain.setValueAtTime(0.32, t0);
+            g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.14);
+            osc.connect(g); g.connect(ac.destination);
+            osc.start(t0); osc.stop(t0 + 0.14);
+        }
+    } catch (_) {}
+}
+
 // ─── UPDATE ──────────────────────────────────────────────────
 function update() {
     updateDog();
+    updateBird();
 
     // Clouds drift
     for (const c of clouds) {
@@ -562,8 +636,14 @@ function update() {
         arrow.y     += arrow.vy;
         arrow.angle  = Math.atan2(arrow.vy, arrow.vx);
 
+        // Hit bird?
+        if (bird.active && bird.hitT < 0) {
+            const dx = arrow.x - bird.x, dy = arrow.y - bird.y;
+            if (dx*dx + dy*dy < 24*24) hitBird();
+        }
+
         // Hit balloon?
-        if (balloon.active && balloon.popT < 0) {
+        if (arrow.flying && balloon.active && balloon.popT < 0) {
             const dx = arrow.x - balloon.x, dy = arrow.y - balloon.y;
             if (dx*dx + dy*dy < (balloon.r + 10) * (balloon.r + 10)) {
                 popBalloon();
@@ -571,7 +651,7 @@ function update() {
         }
 
         // Off screen → miss
-        if (arrow.x < -200 || arrow.x > W + 200 || arrow.y > H + 150 || arrow.y < -H * 0.5) {
+        if (arrow.flying && (arrow.x < -200 || arrow.x > W + 200 || arrow.y > H + 150 || arrow.y < -H * 0.5)) {
             resetArrow();
             if (arrowsLeft === 0) triggerGameOver();
             else triggerDog();
@@ -610,7 +690,7 @@ function popBalloon() {
         localStorage.setItem('ba_best', best);
     }
 
-    floatTexts.push({ x: balloon.x, y: balloon.y - balloon.r - 10, life: 1 });
+    floatTexts.push({ x: balloon.x, y: balloon.y - balloon.r - 10, life: 1, text: '+1', color: '#FFD700', strokeColor: '#8B6914' });
 }
 
 function triggerGameOver() {
@@ -633,6 +713,10 @@ function restart() {
     mouseDown = false;
     balloon.active = false;
     balloon.popT = -1;
+    bird.active = false;
+    bird.hitT = -1;
+    balloonsSinceLastBird = 0;
+    nextBirdAt = 3 + Math.floor(Math.random() * 3);
     resetArrow();
     spawnBalloon();
 }
@@ -642,6 +726,7 @@ function draw() {
     ctx.clearRect(0, 0, W, H);
     drawSky();
     drawClouds();
+    drawBird();
     drawDog();   // drawn first so bush masks its lower body
     drawBush();  // always visible as scenery
     if (balloon.active) drawBalloon();
@@ -982,12 +1067,14 @@ function drawFloatTexts() {
     for (const t of floatTexts) {
         ctx.save();
         ctx.globalAlpha = Math.max(0, t.life);
-        ctx.font = 'bold 52px -apple-system, system-ui, sans-serif';
-        ctx.strokeStyle = '#8B6914';
+        const text = t.text || '+1';
+        const fontSize = text.length > 3 ? 36 : 52;
+        ctx.font = `bold ${fontSize}px -apple-system, system-ui, sans-serif`;
+        ctx.strokeStyle = t.strokeColor || '#8B6914';
         ctx.lineWidth   = 5;
-        ctx.fillStyle   = '#FFD700';
-        ctx.strokeText('+1', t.x, t.y);
-        ctx.fillText('+1', t.x, t.y);
+        ctx.fillStyle   = t.color || '#FFD700';
+        ctx.strokeText(text, t.x, t.y);
+        ctx.fillText(text, t.x, t.y);
         ctx.restore();
     }
     ctx.textAlign = 'left';
@@ -1157,6 +1244,91 @@ function drawDog() {
         ctx.textAlign = 'left';
         ctx.restore();
     }
+}
+
+// ─── BIRD ─────────────────────────────────────────────────────
+function drawBird() {
+    if (!bird.active) return;
+    const { x, y, vx, hitT } = bird;
+    const scale = hitT >= 0 ? Math.max(0, hitT) : 1;
+
+    ctx.save();
+    ctx.translate(x, y);
+    // Flip to face direction of travel (drawn facing right by default)
+    ctx.scale(vx < 0 ? -scale : scale, scale);
+
+    // Wing flap animation
+    const wt   = Date.now() * 0.013;
+    const wingY = Math.sin(wt) * 12;
+
+    // Left wing lobe
+    ctx.fillStyle = '#4A2C14';
+    ctx.beginPath();
+    ctx.moveTo(-4, -1);
+    ctx.quadraticCurveTo(-16, -18 + wingY, -10, wingY * 0.5);
+    ctx.quadraticCurveTo(-2, 3, -4, -1);
+    ctx.fill();
+
+    // Right wing lobe
+    ctx.beginPath();
+    ctx.moveTo(0, -2);
+    ctx.quadraticCurveTo(12, -16 + wingY, 16, wingY * 0.4);
+    ctx.quadraticCurveTo(6, 2, 0, -2);
+    ctx.fill();
+
+    // Body
+    ctx.fillStyle = '#7A5230';
+    ctx.beginPath();
+    ctx.ellipse(2, 2, 14, 9, 0.12, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Belly highlight
+    ctx.fillStyle = '#C8945A';
+    ctx.beginPath();
+    ctx.ellipse(4, 5, 7, 4, 0.12, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Tail feathers
+    ctx.fillStyle = '#4A2C14';
+    ctx.beginPath();
+    ctx.moveTo(-14, 1);
+    ctx.lineTo(-24, -5);
+    ctx.lineTo(-22, 2);
+    ctx.lineTo(-24, 7);
+    ctx.lineTo(-14, 4);
+    ctx.closePath();
+    ctx.fill();
+
+    // Head
+    ctx.fillStyle = '#4A2C14';
+    ctx.beginPath();
+    ctx.arc(15, -4, 8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eye
+    ctx.fillStyle = '#FFF';
+    ctx.beginPath();
+    ctx.arc(17, -5, 2.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.arc(18, -5, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.beginPath();
+    ctx.arc(18.5, -6, 0.7, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Beak
+    ctx.fillStyle = '#E8A020';
+    ctx.beginPath();
+    ctx.moveTo(22, -4);
+    ctx.lineTo(30, -3);
+    ctx.lineTo(22, -2);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
 }
 
 // ─── ARROW QUIVER ────────────────────────────────────────────

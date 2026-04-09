@@ -74,6 +74,36 @@
             color: #fff;
             transform: rotate(180deg);
         }
+
+        /* ── HARD MODE BUTTON ── */
+        #hard-mode-btn {
+            position: fixed;
+            bottom: clamp(12px, 3vw, 20px);
+            left:   clamp(12px, 3vw, 20px);
+            padding: 8px 14px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.18);
+            border: 2px solid rgba(255,255,255,0.30);
+            color: rgba(255,255,255,0.75);
+            font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif;
+            font-weight: 800;
+            font-size: clamp(11px, 2.5vw, 14px);
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            z-index: 300;
+            touch-action: manipulation;
+            transition: background .15s, color .15s, border-color .15s;
+            text-transform: uppercase;
+        }
+        #hard-mode-btn.active {
+            background: rgba(231,76,60,0.75);
+            border-color: rgba(231,76,60,0.9);
+            color: #fff;
+        }
+        #hard-mode-btn:active {
+            background: rgba(255,255,255,0.32);
+            color: #fff;
+        }
     </style>
 </head>
 <body>
@@ -83,6 +113,7 @@
     <div class="pill">Best&nbsp;<em id="best">0</em></div>
 </div>
 <button id="update-btn" onclick="hardRefresh()" title="Refresh app (clear cache)">⟳</button>
+<button id="hard-mode-btn" onclick="toggleHardMode()" title="Toggle hard mode">Hard Mode</button>
 <script>
 'use strict';
 
@@ -195,6 +226,17 @@ let score = 0;
 let best  = +localStorage.getItem('ba_best') || 0;
 bestEl.textContent = best;
 
+// ─── HARD MODE ───────────────────────────────────────────────
+let hardMode = false;
+const hardModeBtn = document.getElementById('hard-mode-btn');
+
+function toggleHardMode() {
+    hardMode = !hardMode;
+    hardModeBtn.classList.toggle('active', hardMode);
+    // Restart immediately so the new settings take effect
+    restart();
+}
+
 // ─── BALLOON ─────────────────────────────────────────────────
 let balloon = {
     active: false,
@@ -205,17 +247,19 @@ let balloon = {
 };
 
 function spawnBalloon() {
-    const margin = 90;
-    const speed  = 1.5 + Math.random() * 1.5 + score * 0.06;
-    balloon.x      = margin + Math.random() * (W - margin * 2);
-    balloon.baseY  = H * 0.10 + Math.random() * H * 0.18;
-    balloon.y      = balloon.baseY;
-    balloon.vx     = (Math.random() < 0.5 ? 1 : -1) * speed;
-    balloon.bobT   = Math.random() * Math.PI * 2;
-    balloon.color  = BALLOON_COLORS[Math.floor(Math.random() * BALLOON_COLORS.length)];
-    balloon.r      = Math.max(36, 60 - score * 0.6);  // gets smaller up to a minimum
-    balloon.active = true;
-    balloon.popT   = -1;
+    const margin     = 90;
+    const speedMult  = hardMode ? 2.5 : 1;
+    const speed      = (1.5 + Math.random() * 1.5 + score * 0.06) * speedMult;
+    balloon.x        = margin + Math.random() * (W - margin * 2);
+    balloon.baseY    = H * 0.10 + Math.random() * H * 0.18;
+    balloon.y        = balloon.baseY;
+    balloon.vx       = (Math.random() < 0.5 ? 1 : -1) * speed;
+    balloon.bobT     = Math.random() * Math.PI * 2;
+    balloon.color    = BALLOON_COLORS[Math.floor(Math.random() * BALLOON_COLORS.length)];
+    const baseR      = hardMode ? 15 : 60;  // quarter size in hard mode
+    balloon.r        = Math.max(hardMode ? 9 : 36, baseR - score * 0.6);
+    balloon.active   = true;
+    balloon.popT     = -1;
 }
 
 // ─── ARROW ───────────────────────────────────────────────────
@@ -489,8 +533,9 @@ function update() {
     // Balloon movement
     if (balloon.active && balloon.popT < 0) {
         balloon.x   += balloon.vx;
-        balloon.bobT += 0.022;
-        balloon.y    = balloon.baseY + Math.sin(balloon.bobT) * 14;
+        balloon.bobT += hardMode ? 0.055 : 0.022;
+        const bobAmp = hardMode ? H * 0.22 : 14;
+        balloon.y    = balloon.baseY + Math.sin(balloon.bobT) * bobAmp;
         // Bounce off walls
         if (balloon.x < balloon.r + 20 || balloon.x > W - balloon.r - 20) {
             balloon.vx *= -1;

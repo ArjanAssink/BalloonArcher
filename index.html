@@ -146,6 +146,9 @@ function darken(hex, a) {
 }
 
 // ─── GAME STATE ──────────────────────────────────────────────
+const MAX_ARROWS = 10;
+let arrowsLeft = MAX_ARROWS;
+let gameOver   = false;
 let score = 0;
 let best  = +localStorage.getItem('ba_best') || 0;
 bestEl.textContent = best;
@@ -200,7 +203,7 @@ function nearBow(x, y) {
 }
 
 function startAim(x, y) {
-    if (arrow.flying || !balloon.active || balloon.popT >= 0) return false;
+    if (gameOver || arrow.flying || arrowsLeft === 0 || !balloon.active || balloon.popT >= 0) return false;
     if (!nearBow(x, y)) return false;
     aiming = true; aimX = x; aimY = y;
     return true;
@@ -208,6 +211,7 @@ function startAim(x, y) {
 
 canvas.addEventListener('touchstart', e => {
     e.preventDefault();
+    if (gameOver) { restart(); return; }
     for (const t of e.changedTouches) {
         const r = canvas.getBoundingClientRect();
         const x = t.clientX - r.left, y = t.clientY - r.top;
@@ -243,6 +247,7 @@ canvas.addEventListener('touchcancel', () => { aiming = false; activeTouchId = n
 // Mouse (desktop / simulator)
 let mouseDown = false;
 canvas.addEventListener('mousedown', e => {
+    if (gameOver) { restart(); return; }
     const r = canvas.getBoundingClientRect();
     if (startAim(e.clientX - r.left, e.clientY - r.top)) mouseDown = true;
 });
@@ -270,6 +275,7 @@ function shoot() {
     arrow.angle = Math.atan2(dy, dx);
     arrow.flying = true;
     aiming = false;
+    arrowsLeft--;
 }
 
 // ─── PARTICLES ───────────────────────────────────────────────
@@ -335,7 +341,10 @@ function update() {
         balloon.popT -= 0.05;
         if (balloon.popT <= 0) {
             balloon.active = false;
-            setTimeout(spawnBalloon, 700);
+            setTimeout(() => {
+                if (arrowsLeft === 0) triggerGameOver();
+                else spawnBalloon();
+            }, 700);
         }
     }
 
@@ -357,6 +366,7 @@ function update() {
         // Off screen → miss
         if (arrow.x < -200 || arrow.x > W + 200 || arrow.y > H + 150 || arrow.y < -H * 0.5) {
             resetArrow();
+            if (arrowsLeft === 0) triggerGameOver();
         }
     }
 
@@ -394,6 +404,30 @@ function popBalloon() {
     floatTexts.push({ x: balloon.x, y: balloon.y - balloon.r - 10, life: 1 });
 }
 
+function triggerGameOver() {
+    gameOver = true;
+    aiming = false;
+    activeTouchId = null;
+    mouseDown = false;
+    resetArrow();
+}
+
+function restart() {
+    score = 0;
+    scoreEl.textContent = 0;
+    arrowsLeft = MAX_ARROWS;
+    gameOver = false;
+    particles = [];
+    floatTexts = [];
+    aiming = false;
+    activeTouchId = null;
+    mouseDown = false;
+    balloon.active = false;
+    balloon.popT = -1;
+    resetArrow();
+    spawnBalloon();
+}
+
 // ─── DRAW ────────────────────────────────────────────────────
 function draw() {
     ctx.clearRect(0, 0, W, H);
@@ -405,7 +439,9 @@ function draw() {
     if (arrow.flying) drawArrow(arrow.x, arrow.y, arrow.angle, 1);
     drawParticles();
     drawFloatTexts();
+    drawArrowQuiver();
     drawHint();
+    drawGameOver();
 }
 
 function drawSky() {
@@ -570,8 +606,8 @@ function drawBow() {
     ctx.lineTo(rx, ry);
     ctx.stroke();
 
-    // Arrow at bow (when not flying)
-    if (!arrow.flying) {
+    // Arrow at bow (when not flying and arrows remain)
+    if (!arrow.flying && arrowsLeft > 0) {
         const ref = getStringMid();
         const ax  = aiming ? aimX : ref.x;
         const ay  = aiming ? aimY : ref.y;
@@ -747,12 +783,121 @@ function drawFloatTexts() {
 }
 
 function drawHint() {
-    if (score > 0 || arrow.flying) return;
+    if (gameOver || score > 0 || arrow.flying) return;
     ctx.save();
     ctx.fillStyle = 'rgba(255,255,255,0.78)';
     ctx.font = 'bold 20px -apple-system, system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('Drag from the bow to aim · Release to shoot!', W / 2, H - 170);
+    ctx.textAlign = 'left';
+    ctx.restore();
+}
+
+// ─── ARROW QUIVER ────────────────────────────────────────────
+function drawArrowQuiver() {
+    const cols = 5, rows = 2;
+    const aW = 10, aH = 34;
+    const gapX = 9, gapY = 10;
+    const totalW = cols * aW + (cols - 1) * gapX;
+    const totalH = rows * aH + (rows - 1) * gapY;
+
+    // Position bottom-right, above the refresh button (~66px from bottom)
+    const pad = 20;
+    const startX = W - pad - totalW;
+    const startY = H - 78 - totalH;
+
+    // Panel background
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    pill(ctx, startX - 10, startY - 10, totalW + 20, totalH + 20, 12);
+    ctx.fill();
+    ctx.restore();
+
+    for (let i = 0; i < MAX_ARROWS; i++) {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const cx = startX + col * (aW + gapX) + aW / 2;
+        const cy = startY + row * (aH + gapY);
+        drawMiniArrow(cx, cy, aH, i >= arrowsLeft);
+    }
+}
+
+function drawMiniArrow(cx, topY, h, used) {
+    ctx.save();
+    ctx.globalAlpha = used ? 0.22 : 1;
+    ctx.translate(cx, topY);
+
+    // Shaft
+    ctx.strokeStyle = used ? '#999' : '#D4A96A';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, h - 5);
+    ctx.lineTo(0, 9);
+    ctx.stroke();
+
+    // Arrowhead
+    ctx.fillStyle = used ? '#777' : '#B0B0BA';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-5, 11);
+    ctx.lineTo(0, 7);
+    ctx.lineTo(5, 11);
+    ctx.closePath();
+    ctx.fill();
+
+    // Fletching
+    ctx.fillStyle = used ? '#555' : '#CC2222';
+    ctx.beginPath();
+    ctx.moveTo(-5, h - 4);
+    ctx.lineTo(0, h);
+    ctx.lineTo(5, h - 4);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+}
+
+// ─── GAME OVER OVERLAY ───────────────────────────────────────
+function drawGameOver() {
+    if (!gameOver) return;
+
+    // Dimmed backdrop
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.62)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.textAlign = 'center';
+
+    // Title
+    ctx.font = `bold ${Math.round(Math.min(W, H) * 0.09)}px -apple-system, system-ui, sans-serif`;
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = '#8B6914';
+    ctx.fillStyle   = '#FFD700';
+    ctx.strokeText('Game Over!', W / 2, H / 2 - H * 0.10);
+    ctx.fillText  ('Game Over!', W / 2, H / 2 - H * 0.10);
+
+    // Score line
+    ctx.font = `bold ${Math.round(Math.min(W, H) * 0.055)}px -apple-system, system-ui, sans-serif`;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    const scoreLine = `Score: ${score}   Best: ${best}`;
+    ctx.strokeText(scoreLine, W / 2, H / 2 + H * 0.02);
+    ctx.fillText  (scoreLine, W / 2, H / 2 + H * 0.02);
+
+    // New best badge
+    if (score > 0 && score === best) {
+        ctx.font = `bold ${Math.round(Math.min(W, H) * 0.038)}px -apple-system, system-ui, sans-serif`;
+        ctx.fillStyle = '#FFD700';
+        ctx.fillText('🏆 New best!', W / 2, H / 2 + H * 0.10);
+    }
+
+    // Tap to restart
+    ctx.font = `bold ${Math.round(Math.min(W, H) * 0.034)}px -apple-system, system-ui, sans-serif`;
+    ctx.fillStyle = 'rgba(255,255,255,0.70)';
+    ctx.fillText('Tap anywhere to play again', W / 2, H / 2 + H * 0.20);
+
     ctx.textAlign = 'left';
     ctx.restore();
 }

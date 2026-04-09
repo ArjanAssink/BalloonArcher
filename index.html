@@ -351,7 +351,7 @@ function startAim(x, y) {
 
 canvas.addEventListener('touchstart', e => {
     e.preventDefault();
-    getAC(); // unlock AudioContext on first touch (iOS requirement)
+    getAC().catch(() => {}); // unlock AudioContext on first touch (iOS requirement)
     if (gameOver) { restart(); return; }
     for (const t of e.changedTouches) {
         const r = canvas.getBoundingClientRect();
@@ -388,7 +388,7 @@ canvas.addEventListener('touchcancel', () => { aiming = false; activeTouchId = n
 // Mouse (desktop / simulator)
 let mouseDown = false;
 canvas.addEventListener('mousedown', e => {
-    getAC();
+    getAC().catch(() => {});
     if (gameOver) { restart(); return; }
     const r = canvas.getBoundingClientRect();
     if (startAim(e.clientX - r.left, e.clientY - r.top)) mouseDown = true;
@@ -463,8 +463,11 @@ function initClouds() {
 let _ac = null;
 function getAC() {
     if (!_ac) _ac = new (window.AudioContext || window.webkitAudioContext)();
-    if (_ac.state === 'suspended') _ac.resume().catch(() => {});
-    return _ac;
+    // Return a Promise that resolves once the context is running.
+    // On iOS the context is often suspended after backgrounding;
+    // awaiting resume() ensures sounds are scheduled while running.
+    if (_ac.state !== 'running') return _ac.resume().then(() => _ac);
+    return Promise.resolve(_ac);
 }
 
 function noise(ac, duration) {
@@ -477,9 +480,9 @@ function noise(ac, duration) {
     return src;
 }
 
-function playShoot() {
+async function playShoot() {
     try {
-        const ac = getAC(), t = ac.currentTime;
+        const ac = await getAC(), t = ac.currentTime;
 
         // Snap — short filtered noise burst
         const ns  = noise(ac, 0.055);
@@ -504,9 +507,9 @@ function playShoot() {
     } catch (_) {}
 }
 
-function playPop() {
+async function playPop() {
     try {
-        const ac = getAC(), t = ac.currentTime;
+        const ac = await getAC(), t = ac.currentTime;
 
         // Crack — wide noise burst, high-passed
         const ns  = noise(ac, 0.16);
@@ -531,9 +534,9 @@ function playPop() {
     } catch (_) {}
 }
 
-function playDogLaugh() {
+async function playDogLaugh() {
     try {
-        const ac = getAC();
+        const ac = await getAC();
 
         // Three "ha" barks with LFO wobble for laugh character
         for (let i = 0; i < 3; i++) {
@@ -574,9 +577,9 @@ function playDogLaugh() {
     } catch (_) {}
 }
 
-function playBirdHit() {
+async function playBirdHit() {
     try {
-        const ac = getAC(), t = ac.currentTime;
+        const ac = await getAC(), t = ac.currentTime;
         // Two ascending chirps — reward sound
         for (let i = 0; i < 2; i++) {
             const t0 = t + i * 0.15;

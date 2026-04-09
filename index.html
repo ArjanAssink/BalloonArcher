@@ -316,6 +316,23 @@ function hitBird() {
     });
 }
 
+function hitDog() {
+    playDogYelp();
+    burst(dog.x, dog.y, '#D4A043');
+    dog.state = 'falling';
+    arrow.flying = false;
+    arrow.x = BOW_X; arrow.y = BOW_Y; arrow.angle = -Math.PI / 2;
+
+    arrowsLeft += 10;
+    floatTexts.push({
+        x: dog.x, y: dog.y - 50,
+        life: 1,
+        text: '+10 arrows',
+        color: '#FFD700',
+        strokeColor: '#8B6914'
+    });
+}
+
 // ─── ARROW ───────────────────────────────────────────────────
 let arrow = {
     x: 0, y: 0, vx: 0, vy: 0,
@@ -596,6 +613,24 @@ async function playBirdHit() {
     } catch (_) {}
 }
 
+async function playDogYelp() {
+    try {
+        const ac = await getAC(), t = ac.currentTime;
+        // Descending whine — dog surprised yelp
+        const osc  = ac.createOscillator();
+        const filt = ac.createBiquadFilter();
+        const g    = ac.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(520, t);
+        osc.frequency.exponentialRampToValueAtTime(55, t + 0.45);
+        filt.type = 'bandpass'; filt.frequency.value = 800; filt.Q.value = 1.4;
+        g.gain.setValueAtTime(0.5, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+        osc.connect(filt); filt.connect(g); g.connect(ac.destination);
+        osc.start(t); osc.stop(t + 0.45);
+    } catch (_) {}
+}
+
 // ─── UPDATE ──────────────────────────────────────────────────
 function update() {
     updateDog();
@@ -643,6 +678,12 @@ function update() {
         if (bird.active && bird.hitT < 0) {
             const dx = arrow.x - bird.x, dy = arrow.y - bird.y;
             if (dx*dx + dy*dy < 24*24) hitBird();
+        }
+
+        // Hit dog?
+        if (arrow.flying && dog.state !== 'hidden') {
+            const dx = arrow.x - dog.x, dy = arrow.y - dog.y;
+            if (dx*dx + dy*dy < 50*50) hitDog();
         }
 
         // Hit balloon?

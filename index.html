@@ -178,7 +178,7 @@ function updateDog() {
     dog.frame++;
     if (dog.state === 'rising') {
         dog.y -= 6;
-        if (dog.y <= dog.peekY) { dog.y = dog.peekY; dog.state = 'laughing'; }
+        if (dog.y <= dog.peekY) { dog.y = dog.peekY; dog.state = 'laughing'; playDogLaugh(); }
     } else if (dog.state === 'laughing') {
         if (--dog.timer <= 0) dog.state = 'falling';
     } else if (dog.state === 'falling') {
@@ -253,6 +253,7 @@ function startAim(x, y) {
 
 canvas.addEventListener('touchstart', e => {
     e.preventDefault();
+    getAC(); // unlock AudioContext on first touch (iOS requirement)
     if (gameOver) { restart(); return; }
     for (const t of e.changedTouches) {
         const r = canvas.getBoundingClientRect();
@@ -289,6 +290,7 @@ canvas.addEventListener('touchcancel', () => { aiming = false; activeTouchId = n
 // Mouse (desktop / simulator)
 let mouseDown = false;
 canvas.addEventListener('mousedown', e => {
+    getAC();
     if (gameOver) { restart(); return; }
     const r = canvas.getBoundingClientRect();
     if (startAim(e.clientX - r.left, e.clientY - r.top)) mouseDown = true;
@@ -318,6 +320,7 @@ function shoot() {
     arrow.flying = true;
     aiming = false;
     arrowsLeft--;
+    playShoot();
 }
 
 // ─── PARTICLES ───────────────────────────────────────────────
@@ -356,6 +359,121 @@ function initClouds() {
             alpha: 0.55 + Math.random() * 0.4
         });
     }
+}
+
+// ─── AUDIO ───────────────────────────────────────────────────
+let _ac = null;
+function getAC() {
+    if (!_ac) _ac = new (window.AudioContext || window.webkitAudioContext)();
+    if (_ac.state === 'suspended') _ac.resume().catch(() => {});
+    return _ac;
+}
+
+function noise(ac, duration) {
+    const len = (ac.sampleRate * duration) | 0;
+    const buf = ac.createBuffer(1, len, ac.sampleRate);
+    const d   = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    return src;
+}
+
+function playShoot() {
+    try {
+        const ac = getAC(), t = ac.currentTime;
+
+        // Snap — short filtered noise burst
+        const ns  = noise(ac, 0.055);
+        const bpf = ac.createBiquadFilter();
+        bpf.type = 'bandpass'; bpf.frequency.value = 850; bpf.Q.value = 2.5;
+        const ng  = ac.createGain();
+        ng.gain.setValueAtTime(0.7, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.055);
+        ns.connect(bpf); bpf.connect(ng); ng.connect(ac.destination);
+        ns.start(t);
+
+        // Twang — triangle oscillator decaying pitch
+        const osc = ac.createOscillator();
+        const og  = ac.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(210, t);
+        osc.frequency.exponentialRampToValueAtTime(52, t + 0.28);
+        og.gain.setValueAtTime(0.45, t);
+        og.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+        osc.connect(og); og.connect(ac.destination);
+        osc.start(t); osc.stop(t + 0.28);
+    } catch (_) {}
+}
+
+function playPop() {
+    try {
+        const ac = getAC(), t = ac.currentTime;
+
+        // Crack — wide noise burst, high-passed
+        const ns  = noise(ac, 0.16);
+        const hpf = ac.createBiquadFilter();
+        hpf.type = 'highpass'; hpf.frequency.value = 280;
+        const ng  = ac.createGain();
+        ng.gain.setValueAtTime(1.6, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+        ns.connect(hpf); hpf.connect(ng); ng.connect(ac.destination);
+        ns.start(t);
+
+        // Thump — sine sweep down (air pressure)
+        const osc = ac.createOscillator();
+        const og  = ac.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(160, t);
+        osc.frequency.exponentialRampToValueAtTime(18, t + 0.20);
+        og.gain.setValueAtTime(1.0, t);
+        og.gain.exponentialRampToValueAtTime(0.001, t + 0.20);
+        osc.connect(og); og.connect(ac.destination);
+        osc.start(t); osc.stop(t + 0.20);
+    } catch (_) {}
+}
+
+function playDogLaugh() {
+    try {
+        const ac = getAC();
+
+        // Three "ha" barks with LFO wobble for laugh character
+        for (let i = 0; i < 3; i++) {
+            const t = ac.currentTime + i * 0.23;
+
+            const osc  = ac.createOscillator();
+            const lfo  = ac.createOscillator();
+            const lfoG = ac.createGain();
+            const filt = ac.createBiquadFilter();
+            const g    = ac.createGain();
+
+            // Carrier: sawtooth for bark-like tone
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(190 + i * 22, t);
+            osc.frequency.exponentialRampToValueAtTime(130, t + 0.18);
+
+            // LFO: rapid wobble gives the laugh character
+            lfo.frequency.value = 14;
+            lfoG.gain.value = 28;
+            lfo.connect(lfoG);
+            lfoG.connect(osc.frequency);
+
+            // Bandpass shapes the "hah" vowel formant
+            filt.type = 'bandpass';
+            filt.frequency.value = 950;
+            filt.Q.value = 1.2;
+
+            // Envelope: sharp attack, hold, decay
+            g.gain.setValueAtTime(0, t);
+            g.gain.linearRampToValueAtTime(0.28, t + 0.025);
+            g.gain.setValueAtTime(0.28, t + 0.10);
+            g.gain.exponentialRampToValueAtTime(0.001, t + 0.21);
+
+            osc.connect(filt); filt.connect(g); g.connect(ac.destination);
+            lfo.start(t); lfo.stop(t + 0.21);
+            osc.start(t); osc.stop(t + 0.21);
+        }
+    } catch (_) {}
 }
 
 // ─── UPDATE ──────────────────────────────────────────────────
@@ -433,6 +551,7 @@ function update() {
 }
 
 function popBalloon() {
+    playPop();
     burst(balloon.x, balloon.y, balloon.color);
     balloon.popT  = 1;
     arrow.flying  = false;

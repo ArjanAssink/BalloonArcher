@@ -1250,7 +1250,23 @@ spawnBalloon();
 loop();
 
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
+    // Reload once when a new SW takes control so the fresh code is used.
+    let swRefreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!swRefreshing) { swRefreshing = true; location.reload(); }
+    });
+
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+        // If a waiting worker exists (e.g. from a previous visit), activate it now.
+        if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        reg.addEventListener('updatefound', () => {
+            reg.installing.addEventListener('statechange', function () {
+                if (this.state === 'installed' && navigator.serviceWorker.controller) {
+                    this.postMessage({ type: 'SKIP_WAITING' });
+                }
+            });
+        });
+    }).catch(() => {});
 }
 </script>
 </body>

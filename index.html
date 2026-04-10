@@ -110,6 +110,7 @@
 <canvas id="gameCanvas"></canvas>
 <div id="hud">
     <div class="pill">Score&nbsp;<em id="score">0</em></div>
+    <div class="pill">Level&nbsp;<em id="level">1</em></div>
     <div class="pill">Best&nbsp;<em id="best">0</em></div>
 </div>
 <button id="update-btn" onclick="hardRefresh()" title="Refresh app (clear cache)">⟳</button>
@@ -120,6 +121,7 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx    = canvas.getContext('2d');
 const scoreEl = document.getElementById('score');
+const levelEl = document.getElementById('level');
 const bestEl  = document.getElementById('best');
 
 // ─── VIEWPORT ────────────────────────────────────────────────
@@ -223,6 +225,7 @@ const MAX_ARROWS = 10;
 let arrowsLeft = MAX_ARROWS;
 let gameOver   = false;
 let score = 0;
+let level = 1;
 let best  = +localStorage.getItem('ba_best') || 0;
 bestEl.textContent = best;
 
@@ -257,17 +260,20 @@ let balloon = {
 };
 
 function spawnBalloon() {
-    const margin     = 90;
-    const speedMult  = hardMode ? 2.5 : 1;
-    const speed      = (1.5 + Math.random() * 1.5 + score * 0.06) * speedMult;
+    const margin          = 90;
+    const speedMult       = hardMode ? 2.5 : 1;
+    const lv              = level - 1;
+    const levelSpeedBonus = lv * 0.35;
+    const speed           = (1.5 + Math.random() * 1.5 + score * 0.06 + levelSpeedBonus) * speedMult;
     balloon.x        = margin + Math.random() * (W - margin * 2);
     balloon.baseY    = H * 0.10 + Math.random() * H * 0.18;
     balloon.y        = balloon.baseY;
     balloon.vx       = (Math.random() < 0.5 ? 1 : -1) * speed;
     balloon.bobT     = Math.random() * Math.PI * 2;
     balloon.color    = BALLOON_COLORS[Math.floor(Math.random() * BALLOON_COLORS.length)];
-    const baseR      = hardMode ? 15 : 60;  // quarter size in hard mode
-    balloon.r        = Math.max(hardMode ? 9 : 36, baseR - score * 0.6);
+    const baseR      = hardMode ? 15 : Math.max(25, 60 - lv * 4);
+    const minR       = hardMode ? 9  : Math.max(14, 36 - lv * 3);
+    balloon.r        = Math.max(minR, baseR - score * 0.6);
     balloon.active   = true;
     balloon.popT     = -1;
 
@@ -323,11 +329,11 @@ function hitDog() {
     arrow.flying = false;
     arrow.x = BOW_X; arrow.y = BOW_Y; arrow.angle = -Math.PI / 2;
 
-    arrowsLeft += 10;
+    arrowsLeft += 2;
     floatTexts.push({
         x: dog.x, y: dog.y - 50,
         life: 1,
-        text: '+10 arrows',
+        text: '+2 arrows',
         color: '#FFD700',
         strokeColor: '#8B6914'
     });
@@ -645,8 +651,9 @@ function update() {
     // Balloon movement
     if (balloon.active && balloon.popT < 0) {
         balloon.x   += balloon.vx;
-        balloon.bobT += hardMode ? 0.055 : 0.022;
-        const bobAmp = hardMode ? H * 0.22 : 14;
+        const bobFactor  = Math.max(0, level - 2);  // 0 at levels 1-2, grows from level 3
+        balloon.bobT += hardMode ? 0.055 : (0.022 + bobFactor * 0.007);
+        const bobAmp = hardMode ? H * 0.22 : (14 + bobFactor * H * 0.05);
         balloon.y    = balloon.baseY + Math.sin(balloon.bobT) * bobAmp;
         // Bounce off walls
         if (balloon.x < balloon.r + 20 || balloon.x > W - balloon.r - 20) {
@@ -713,8 +720,8 @@ function update() {
     // Floating score texts
     for (let i = floatTexts.length - 1; i >= 0; i--) {
         const t = floatTexts[i];
-        t.y   -= 1.8;
-        t.life -= 0.022;
+        t.y   -= t.speed ?? 1.8;
+        t.life -= t.decay ?? 0.022;
         if (t.life <= 0) floatTexts.splice(i, 1);
     }
 }
@@ -734,6 +741,19 @@ function popBalloon() {
         localStorage.setItem('ba_best', best);
     }
 
+    const newLevel = Math.floor(score / 5) + 1;
+    if (newLevel > level) {
+        level = newLevel;
+        levelEl.textContent = level;
+        floatTexts.push({
+            x: W / 2, y: H * 0.40,
+            life: 1.5, speed: 0.5, decay: 0.010,
+            text: `Level ${level}!`,
+            color: '#00FF88', strokeColor: '#005533',
+            big: true
+        });
+    }
+
     floatTexts.push({ x: balloon.x, y: balloon.y - balloon.r - 10, life: 1, text: '+1', color: '#FFD700', strokeColor: '#8B6914' });
 }
 
@@ -747,7 +767,9 @@ function triggerGameOver() {
 
 function restart() {
     score = 0;
+    level = 1;
     scoreEl.textContent = 0;
+    levelEl.textContent = 1;
     arrowsLeft = MAX_ARROWS;
     gameOver = false;
     particles = [];
@@ -1110,12 +1132,14 @@ function drawFloatTexts() {
     ctx.textAlign = 'center';
     for (const t of floatTexts) {
         ctx.save();
-        ctx.globalAlpha = Math.max(0, t.life);
+        ctx.globalAlpha = Math.min(1, Math.max(0, t.life));
         const text = t.text || '+1';
-        const fontSize = text.length > 3 ? 36 : 52;
+        const fontSize = t.big
+            ? Math.round(Math.min(W, H) * 0.09)
+            : (text.length > 3 ? 36 : 52);
         ctx.font = `bold ${fontSize}px -apple-system, system-ui, sans-serif`;
         ctx.strokeStyle = t.strokeColor || '#8B6914';
-        ctx.lineWidth   = 5;
+        ctx.lineWidth   = t.big ? 7 : 5;
         ctx.fillStyle   = t.color || '#FFD700';
         ctx.strokeText(text, t.x, t.y);
         ctx.fillText(text, t.x, t.y);
@@ -1377,9 +1401,12 @@ function drawBird() {
 
 // ─── ARROW QUIVER ────────────────────────────────────────────
 function drawArrowQuiver() {
-    const cols = 5, rows = 2;
+    const cols = 5;
     const aW = 10, aH = 34;
     const gapX = 9, gapY = 10;
+    // Expand grid when arrowsLeft exceeds MAX_ARROWS (e.g. after bird hit)
+    const displayCount = Math.min(30, Math.max(MAX_ARROWS, arrowsLeft));
+    const rows = Math.ceil(displayCount / cols);
     const totalW = cols * aW + (cols - 1) * gapX;
     const totalH = rows * aH + (rows - 1) * gapY;
 
@@ -1395,7 +1422,7 @@ function drawArrowQuiver() {
     ctx.fill();
     ctx.restore();
 
-    for (let i = 0; i < MAX_ARROWS; i++) {
+    for (let i = 0; i < displayCount; i++) {
         const col = i % cols;
         const row = Math.floor(i / cols);
         const cx = startX + col * (aW + gapX) + aW / 2;

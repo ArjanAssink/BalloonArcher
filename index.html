@@ -374,7 +374,7 @@ function startAim(x, y) {
 
 canvas.addEventListener('touchstart', e => {
     e.preventDefault();
-    getAC().catch(() => {}); // unlock AudioContext on first touch (iOS requirement)
+    unlockAudio(); // unlock AudioContext on first touch (iOS requirement)
     if (gameOver) { restart(); return; }
     for (const t of e.changedTouches) {
         const r = canvas.getBoundingClientRect();
@@ -411,7 +411,7 @@ canvas.addEventListener('touchcancel', () => { aiming = false; activeTouchId = n
 // Mouse (desktop / simulator)
 let mouseDown = false;
 canvas.addEventListener('mousedown', e => {
-    getAC().catch(() => {});
+    unlockAudio();
     if (gameOver) { restart(); return; }
     const r = canvas.getBoundingClientRect();
     if (startAim(e.clientX - r.left, e.clientY - r.top)) mouseDown = true;
@@ -492,6 +492,26 @@ function getAC() {
     if (_ac.state !== 'running') return _ac.resume().then(() => _ac);
     return Promise.resolve(_ac);
 }
+
+// iOS requires actual audio playback (not just resume()) within a user gesture
+// to fully unlock the AudioContext. Playing a silent 1-sample buffer does this.
+async function unlockAudio() {
+    try {
+        const ac = await getAC();
+        const buf = ac.createBuffer(1, 1, ac.sampleRate);
+        const src = ac.createBufferSource();
+        src.buffer = buf;
+        src.connect(ac.destination);
+        src.start(0);
+    } catch (_) {}
+}
+
+// Resume suspended context when user returns to the app after backgrounding
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && _ac && _ac.state === 'suspended') {
+        _ac.resume().catch(() => {});
+    }
+});
 
 function noise(ac, duration) {
     const len = (ac.sampleRate * duration) | 0;
